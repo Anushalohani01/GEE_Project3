@@ -1,1 +1,151 @@
 
+// Methane (CH₄) Monitoring and Trend Analysis with Sentinel-5P in Google Earth Engine
+
+// 1. Load a global administrative boundary dataset and define the region of interest (ROI)
+var adminBoundaries = ee.FeatureCollection("FAO/GAUL/2015/level1"); // Global admin boundaries dataset
+Map.addLayer(adminBoundaries, {}, 'Boundaries', false);
+
+var coordinate = [146.04887276290677,-41.61572637613322]; // Point of interest coordinates
+var pointGeometry = ee.Geometry.Point(coordinate); // Convert the point to a geometry object
+
+// Filter the admin boundaries to include only features intersecting with the point geometry
+var regionOfInterest = adminBoundaries.filterBounds(pointGeometry);
+
+// Center the map on the region of interest and visualize the boundary layer
+Map.centerObject(regionOfInterest, 6);
+Map.addLayer(regionOfInterest, {}, 'Region of Interest');
+
+// 2. Set the time range for methane monitoring
+var analysisStartYear = '2020';
+var analysisEndYear = '2024';
+
+// Load Sentinel-5P CH₄ dataset, select methane band, and filter by date and region
+var sentinel5P = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+  .select(['CH4_column_volume_mixing_ratio_dry_air'], ['methane']) // Rename the methane band
+  .filterDate(analysisStartYear, analysisEndYear)
+  .filterBounds(regionOfInterest);
+  
+// 3. Generate a list of years and months for aggregation
+var yearRange = ee.List.sequence(
+  ee.Number.parse(analysisStartYear), 
+  ee.Number.parse(analysisEndYear).subtract(1)
+);
+print(yearRange)
+
+var monthRange = ee.List.sequence(1, 12);
+print(monthRange)
+
+
+// Compute monthly average methane concentration for each year
+var monthlyMethaneData = ee.ImageCollection(
+  yearRange.map(function(year) {
+    return monthRange.map(function(month) {
+      var monthlyImage = sentinel5P
+        .filter(ee.Filter.calendarRange(year, year, 'year'))
+        .filter(ee.Filter.calendarRange(month, month, 'month'))
+        .mean(); // Compute monthly average
+        /*
+ee.Filter.calendarRange(start, end, field)
+The ee.Filter.calendarRange() function is used to filter ImageCollections, FeatureCollections, 
+or other datasets based on specific calendar components like year, month, day, hour, etc. 
+This is useful for selecting data that falls within a specific time period in the calendar.
+*/
+      var date = ee.Date.fromYMD(year, month, 1);
+      return monthlyImage
+        .set('system:time_start', date.millis())
+        .set('system:index', date.format('YYYY-MM-dd'));
+    });
+  }).flatten()
+/*
+Converts the nested structure of year and month images into a single ImageCollection.
+Each image in this collection represents the monthly average methane concentration for a specific year and month.
+*/
+);
+print(monthlyMethaneData)
+
+
+// 4. Create a time-series chart for methane concentration over the region
+print(
+  ui.Chart.image.series(monthlyMethaneData, regionOfInterest, ee.Reducer.mean(), 7000, 'system:time_start')
+    .setOptions({
+      title: 'Methane Concentration Time Series (2020-2024)',
+      hAxis: {title: 'Time'},
+      vAxis: {title: 'Methane Concentration (ppb)'}
+    })
+);
+
+// Compute the mean methane concentration for the entire time frame
+var meanMethane = monthlyMethaneData.mean();
+
+// Define visualization parameters for the methane map
+var methaneVisualization = {
+  min: 1750,
+  max: 1900,
+  palette: ['black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red']
+};
+
+// Visualize the average methane concentration
+Map.addLayer(meanMethane.clip(regionOfInterest), methaneVisualization, 'Mean Methane Concentration');
+
+
+// 5. Compute methane anomaly (deviation from the mean)
+var methaneAnomalies = monthlyMethaneData.map(function(image) {
+  var anomaly = image.subtract(meanMethane).rename('anomaly'); // Calculate anomaly
+  return anomaly.copyProperties(image, image.propertyNames()); // Preserve metadata
+});
+
+// Generate a chart for methane anomalies over time
+print(
+  ui.Chart.image.series(methaneAnomalies, regionOfInterest, ee.Reducer.mean(), 7000, 'system:time_start')
+    .setChartType('ColumnChart')
+    .setOptions({
+      title: 'Methane Anomalies (2020-2024)',
+      hAxis: {title: 'Time'},
+      vAxis: {title: 'Anomaly (ppb)'},
+      colors: ['orange']
+    })
+);
+
+// Filter for positive anomalies and compute their statistics
+var positiveAnomalies = methaneAnomalies.map(function(image) {
+  var anomalyMean = ee.Number(image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: regionOfInterest,
+    scale: 7000
+  }).values().get(0));
+  return image.set('methane_value', anomalyMean).copyProperties(image, image.propertyNames());
+}).filter(ee.Filter.gt('methane_value', 0));
+print(positiveAnomalies)
+
+// Generate a time-series chart for positive anomalies
+print(
+  ui.Chart.image.series(positiveAnomalies, regionOfInterest, ee.Reducer.mean(), 7000, 'system:time_start')
+    .setChartType('ColumnChart')
+    .setOptions({
+      title: 'Positive Methane Anomalies',
+      hAxis: {title: 'Time'},
+      vAxis: {title: 'Anomaly (ppb)'},
+      colors: ['red']
+    })
+);
+
+// Export positive anomalies as a raster
+Export.image.toDrive({
+  image: positiveAnomalies.toBands().clip(regionOfInterest),
+  description: 'Positive_Methane_Anomalies',
+  region: regionOfInterest,
+  scale: 7000,
+  maxPixels: 1e13,
+  folder: 'Methane_Monitoring',
+  crs: 'EPSG:4326'
+});
+
+// 6. Compute and visualize methane trend using Kendall’s correlation
+var methaneTrend = monthlyMethaneData.reduce(ee.Reducer.kendallsCorrelation());
+print(methaneTrend)
+
+Map.addLayer(
+  methaneTrend.select('methane_tau').clip(regionOfInterest),
+  {palette: ['green', 'black', 'red'], min: -1, max: 1},
+  'Methane Trend'
+);
