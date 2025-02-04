@@ -1,5 +1,5 @@
-Methane (CH₄) Monitoring and Trend Analysis with Sentinel-5P in Google Earth Engine
-Overview
+Methane (CH₄) Monitoring and Trend Analysis with Sentinel-5P in Google Earth EngineOverview:
+
 This project leverages the capabilities of Google Earth Engine (GEE) to monitor atmospheric methane (CH₄) concentrations using Sentinel-5P satellite data. Methane is a potent greenhouse gas contributing significantly to climate change. This script demonstrates how to analyze methane trends, compute anomalies, and visualize results for a specific region of interest (ROI) over a defined time frame.
 
 Methodology
@@ -58,23 +58,6 @@ Sentinel-5P CH₄ (COPERNICUS/S5P/OFFL/L3_CH4) for methane concentrations.
 Output Visualizations:
 Methane concentration maps (mean and trends).
 Time-series charts (monthly concentrations and anomalies).
-
-Exported Data:
-Positive methane anomalies as raster files.
-Processed methane trend maps.
-
-How to Use
-Clone or copy the script into the Google Earth Engine Code Editor.
-Specify the coordinates of your region of interest (ROI).
-Define the time frame for analysis.
-Run the script to generate visualizations and export data.
-This project showcases the power of satellite-based atmospheric monitoring for methane trend analysis and can be extended to other greenhouse gases or regions.
-
-
-
-
-
-
 
 
 
